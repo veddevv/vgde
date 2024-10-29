@@ -1,7 +1,8 @@
+import os
 import requests
 
-# Replace 'your_rawg_api_key_here' with your actual RAWG API key
-API_KEY = 'your_rawg_api_key_here'
+# Retrieve the RAWG API key from environment variables
+API_KEY = os.getenv('RAWG_API_KEY')
 BASE_URL = 'https://api.rawg.io/api'
 
 def get_game_info(game_name):
@@ -14,25 +15,44 @@ def get_game_info(game_name):
     Returns:
     dict: A dictionary containing the game's information, or None if the game is not found.
     """
+    if not API_KEY:
+        print("API key not found. Please set the RAWG_API_KEY environment variable.")
+        return None
+
     url = f"{BASE_URL}/games"
     params = {
         'key': API_KEY,
         'search': game_name
     }
-    response = requests.get(url, params=params, timeout=10)
-    data = response.json()
- 
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
+    except requests.RequestException as e:
+        print(f"Network error occurred: {e}")
+        return None
+    
+    try:
+        data = response.json()
+    except ValueError as e:
+        print(f"JSON decoding error: {e}")
+        return None
+
     # Check if the API returned any results
-    if 'results' in data and len(data['results']) > 0:
+    if 'results' in data and isinstance(data['results'], list) and len(data['results']) > 0:
         game = data['results'][0]
-        return {
-            'name': game['name'],
-            'released': game['released'],
-            'rating': game['rating'],
-            'background_image': game['background_image'],
-            'description': game['description_raw'] if 'description_raw' in game else 'No description available.'
-        }
+        # Ensure the expected keys are in the game data
+        if all(key in game for key in ['name', 'released', 'rating']):
+            return {
+                'name': game['name'],
+                'released': game['released'],
+                'rating': game['rating'],
+            }
+        else:
+            print("Unexpected data format in API response.")
+            return None
     else:
+        print("No results found for the game.")
         return None
 
 def display_game_info(game_info):
@@ -46,10 +66,8 @@ def display_game_info(game_info):
         print(f"Name: {game_info['name']}")
         print(f"Released: {game_info['released']}")
         print(f"Rating: {game_info['rating']}")
-        print(f"Description: {game_info['description']}")
-        print(f"Background Image: {game_info['background_image']}")
     else:
-        print("Game not found.")
+        print("No game information to display.")
 
 def main():
     """
