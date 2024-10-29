@@ -12,5 +12,5 @@ This Python script fetches and displays information about video games using the 
 - `requests` library
 
 ### Usage
-1. Replace `'your_rawg_api_key_here'` in `vgde.py` with your actual RAWG API key.
+1. Replace `RAWG_API_KEY` in `vgde.py` with your actual RAWG API key.
 2. Run the script and enter the name of the game when prompted.
