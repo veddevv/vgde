@@ -2,6 +2,7 @@ import os
 import requests
 import sys
 import logging
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -31,9 +32,21 @@ def validate_and_sanitize_input(game_name):
     Raises:
     InvalidInputError: If the input is invalid.
     """
-    if not isinstance(game_name, str) or not game_name.strip():
+    if not isinstance(game_name, str):
+        raise InvalidInputError("Invalid input. Game name must be a string.")
+    
+    game_name = game_name.strip()
+    
+    if not game_name:
         raise InvalidInputError("Invalid input. Please enter a non-empty game name.")
-    return game_name.strip()
+    
+    if len(game_name) > 100:
+        raise InvalidInputError("Invalid input. Game name is too long.")
+    
+    if not re.match("^[a-zA-Z0-9\s]+$", game_name):
+        raise InvalidInputError("Invalid input. Game name contains invalid characters.")
+    
+    return game_name
 
 def check_api_key():
     """
@@ -65,22 +78,22 @@ def get_game_info(game_name):
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise an HTTPError for bad responses
     except requests.Timeout:
-        logging.error("The request timed out.")
+        logging.error("The request timed out while trying to fetch game information.")
         return None
     except requests.ConnectionError:
-        logging.error("A network problem occurred.")
+        logging.error("A network problem occurred while trying to fetch game information.")
         return None
     except requests.HTTPError as e:
-        logging.error(f"HTTP error occurred: {e.response.status_code} - {e.response.reason}")
+        logging.error(f"HTTP error occurred while trying to fetch game information: {e.response.status_code} - {e.response.reason}")
         return None
     except requests.RequestException as e:
-        logging.error(f"An error occurred: {e}")
+        logging.error(f"An unexpected error occurred while trying to fetch game information: {e}")
         return None
     
     try:
         data = response.json()
     except ValueError as e:
-        logging.error(f"JSON decoding error: {e}")
+        logging.error(f"JSON decoding error occurred while processing the response: {e}")
         return None
 
     # Check if the API returned any results
@@ -95,10 +108,10 @@ def get_game_info(game_name):
                     'rating': game['rating'],
                 }
             else:
-                logging.error("Unexpected data types in API response.")
+                logging.error("Unexpected data types in API response for game information.")
                 return None
         else:
-            logging.error("Unexpected data format in API response.")
+            logging.error("Unexpected data format in API response for game information.")
             return None
     else:
         logging.info("No results found for the game.")
@@ -131,11 +144,11 @@ def main():
         game_info = get_game_info(sanitized_game_name)
         display_game_info(game_info)
     except InvalidInputError as e:
-        logging.error(e)
+        logging.error(f"Input validation error: {e}")
 
 if __name__ == "__main__":
     try:
         main()
     except MissingAPIKeyError as e:
-        logging.error(e)
+        logging.error(f"API key error: {e}")
         sys.exit(1)
