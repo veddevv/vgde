@@ -19,7 +19,7 @@ class InvalidInputError(Exception):
     """Custom exception for invalid user input."""
     pass
 
-def validate_and_sanitize_input(game_name):
+def sanitize_game_name(game_name):
     """
     Validates and sanitizes the user input.
 
@@ -84,7 +84,10 @@ def get_game_info(game_name):
         logging.error("A network problem occurred while trying to fetch game information.")
         return None
     except requests.HTTPError as e:
-        logging.error(f"HTTP error occurred while trying to fetch game information: {e.response.status_code} - {e.response.reason}")
+        if e.response.status_code == 404:
+            logging.error("Game not found (404).")
+        else:
+            logging.error(f"HTTP error occurred while trying to fetch game information: {e.response.status_code} - {e.response.reason}")
         return None
     except requests.RequestException as e:
         logging.error(f"An unexpected error occurred while trying to fetch game information: {e}")
@@ -114,7 +117,7 @@ def get_game_info(game_name):
             logging.error("Unexpected data format in API response for game information.")
             return None
     else:
-        logging.info("No results found for the game.")
+        logging.warning("No results found for the game.")
         return None
 
 def display_game_info(game_info):
@@ -140,7 +143,7 @@ def main():
 
     try:
         game_name = input("Enter the name of the game: ")
-        sanitized_game_name = validate_and_sanitize_input(game_name)
+        sanitized_game_name = sanitize_game_name(game_name)
         game_info = get_game_info(sanitized_game_name)
         display_game_info(game_info)
     except InvalidInputError as e:
