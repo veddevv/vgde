@@ -132,14 +132,18 @@ def display_game_info(game_info):
         logging.info(f"Released: {game_info['released']}")
         logging.info(f"Rating: {game_info['rating']}")
     else:
-        logging.info("No game information to display.")
+        logging.warning("No game information to display.")
 
 def main():
     """
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
     """
-    check_api_key()
+    try:
+        check_api_key()
+    except MissingAPIKeyError as e:
+        logging.error(f"API key error: {e}")
+        sys.exit(1)
 
     try:
         game_name = input("Enter the name of the game: ")
@@ -148,10 +152,8 @@ def main():
         display_game_info(game_info)
     except InvalidInputError as e:
         logging.error(f"Input validation error: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except MissingAPIKeyError as e:
-        logging.error(f"API key error: {e}")
-        sys.exit(1)
+    main()
