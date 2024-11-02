@@ -34,18 +34,18 @@ def sanitize_game_name(game_name):
     """
     if not isinstance(game_name, str):
         raise InvalidInputError("Invalid input. Game name must be a string.")
-    
+
     game_name = game_name.strip()
-    
+
     if not game_name:
         raise InvalidInputError("Invalid input. Please enter a non-empty game name.")
-    
+
     if len(game_name) > 100:
         raise InvalidInputError("Invalid input. Game name is too long.")
-    
+
     if not re.match("^[a-zA-Z0-9\s]+$", game_name):
         raise InvalidInputError("Invalid input. Game name contains invalid characters.")
-    
+
     return game_name
 
 def check_api_key():
@@ -73,7 +73,7 @@ def get_game_info(game_name):
         'key': API_KEY,
         'search': game_name
     }
-    
+
     try:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise an HTTPError for bad responses
@@ -92,7 +92,7 @@ def get_game_info(game_name):
     except requests.RequestException as e:
         logging.error(f"An unexpected error occurred while trying to fetch game information: {e}")
         return None
-    
+
     try:
         data = response.json()
     except ValueError as e:
