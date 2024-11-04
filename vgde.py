@@ -3,6 +3,7 @@ import requests
 import sys
 import logging
 import re
+from argparse import ArgumentParser
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,7 +44,7 @@ def sanitize_game_name(game_name):
     if len(game_name) > 100:
         raise InvalidInputError("Invalid input. Game name is too long.")
 
-    if not re.match("^[a-zA-Z0-9\s]+$", game_name):
+    if not re.match(r"^[a-zA-Z0-9\s]+$", game_name):
         raise InvalidInputError("Invalid input. Game name contains invalid characters.")
 
     return game_name
@@ -139,6 +140,10 @@ def main():
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
     """
+    parser = ArgumentParser(description="Fetch game information from RAWG API.")
+    parser.add_argument('game_name', type=str, help="The name of the game to search for.")
+    args = parser.parse_args()
+
     try:
         check_api_key()
     except MissingAPIKeyError as e:
@@ -146,8 +151,7 @@ def main():
         sys.exit(1)
 
     try:
-        game_name = input("Enter the name of the game: ")
-        sanitized_game_name = sanitize_game_name(game_name)
+        sanitized_game_name = sanitize_game_name(args.game_name)
         game_info = get_game_info(sanitized_game_name)
         display_game_info(game_info)
     except InvalidInputError as e:
