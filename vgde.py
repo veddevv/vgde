@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
 BASE_URL = 'https://api.rawg.io/api'
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', 10))  # Default to 10 seconds if not set
 
 class MissingAPIKeyError(Exception):
     """Custom exception for missing API key."""
@@ -76,7 +77,7 @@ def get_game_info(game_name):
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()  # Raise an HTTPError for bad responses
     except requests.Timeout:
         logging.error("The request timed out while trying to fetch game information.")
