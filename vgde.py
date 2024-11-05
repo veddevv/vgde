@@ -136,7 +136,7 @@ def display_game_info(game_info):
     else:
         logging.warning("No game information to display.")
 
-def main():
+def main() -> object:
     """
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
@@ -155,10 +155,12 @@ def main():
         sanitized_game_name = sanitize_game_name(args.game_name)
         game_info = get_game_info(sanitized_game_name)
         display_game_info(game_info)
+        return game_info  # Return the game information
     except InvalidInputError as e:
         logging.error(f"Input validation error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
+        return None  # Return None in case of an error
 
 if __name__ == "__main__":
     main()
