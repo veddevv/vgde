@@ -6,6 +6,10 @@ import re
 from argparse import ArgumentParser
 from typing import Optional, Dict
 
+# Constants
+MAX_GAME_NAME_LENGTH = 100
+GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s]+$"
+
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -43,10 +47,10 @@ def sanitize_game_name(game_name: str) -> str:
     if not game_name:
         raise InvalidInputError("Invalid input. Please enter a non-empty game name.")
 
-    if len(game_name) > 100:
+    if len(game_name) > MAX_GAME_NAME_LENGTH:
         raise InvalidInputError("Invalid input. Game name is too long.")
 
-    if not re.match(r"^[a-zA-Z0-9\s]+$", game_name):
+    if not re.match(GAME_NAME_PATTERN, game_name):
         raise InvalidInputError("Invalid input. Game name contains invalid characters.")
 
     return game_name
