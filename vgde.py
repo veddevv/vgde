@@ -4,6 +4,7 @@ import sys
 import logging
 import re
 from argparse import ArgumentParser
+from typing import Optional, Dict
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,7 +22,7 @@ class InvalidInputError(Exception):
     """Custom exception for invalid user input."""
     pass
 
-def sanitize_game_name(game_name):
+def sanitize_game_name(game_name: str) -> str:
     """
     Validates and sanitizes the user input.
 
@@ -50,7 +51,7 @@ def sanitize_game_name(game_name):
 
     return game_name
 
-def check_api_key():
+def check_api_key() -> None:
     """
     Checks if the RAWG API key is set.
 
@@ -60,27 +61,7 @@ def check_api_key():
     if not API_KEY:
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
-def fetch_game_info_from_api(game_name):
-    """
-    Makes the API request to fetch game information.
-
-    Parameters:
-    game_name (str): The name of the game to search for.
-
-    Returns:
-    requests.Response: The response object from the API request.
-    """
-    url = f"{BASE_URL}/games"
-    params = {
-        'key': API_KEY,
-        'search': game_name
-    }
-
-    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-    response.raise_for_status()  # Raise an HTTPError for bad responses
-    return response
-
-def get_game_info(game_name):
+def get_game_info(game_name: str) -> Optional[Dict[str, object]]:
     """
     Fetches information about a game from the RAWG API.
 
@@ -90,8 +71,15 @@ def get_game_info(game_name):
     Returns:
     dict: A dictionary containing the game's information, or None if the game is not found.
     """
+    url = f"{BASE_URL}/games"
+    params = {
+        'key': API_KEY,
+        'search': game_name
+    }
+
     try:
-        response = fetch_game_info_from_api(game_name)
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()  # Raise an HTTPError for bad responses
     except requests.Timeout:
         logging.error("The request timed out while trying to fetch game information.")
         return None
@@ -135,7 +123,7 @@ def get_game_info(game_name):
         logging.warning("No results found for the game.")
         return None
 
-def display_game_info(game_info):
+def display_game_info(game_info: Optional[Dict[str, object]]) -> None:
     """
     Displays information about a game.
 
@@ -149,7 +137,7 @@ def display_game_info(game_info):
     else:
         logging.warning("No game information to display.")
 
-def main():
+def main() -> Optional[Dict[str, object]]:
     """
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
@@ -168,10 +156,12 @@ def main():
         sanitized_game_name = sanitize_game_name(args.game_name)
         game_info = get_game_info(sanitized_game_name)
         display_game_info(game_info)
+        return game_info  # Return the game information
     except InvalidInputError as e:
         logging.error(f"Input validation error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
+        return None  # Return None in case of an error
 
 if __name__ == "__main__":
     main()
