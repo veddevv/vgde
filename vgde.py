@@ -9,6 +9,7 @@ from typing import Optional, Dict
 # Constants
 MAX_GAME_NAME_LENGTH = 100
 GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s]+$"
+DEFAULT_REQUEST_TIMEOUT = 10
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,7 +17,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
 BASE_URL = 'https://api.rawg.io/api'
-REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', 10))  # Default to 10 seconds if not set
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
 
 class MissingAPIKeyError(Exception):
     """Custom exception for missing API key."""
