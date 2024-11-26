@@ -66,67 +66,62 @@ def check_api_key() -> None:
     if not API_KEY:
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
-def get_game_info(game_name: str) -> Optional[Dict[str, object]]:
+def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
     """
-    Fetches information about a game from the RAWG API.
+    Fetches game data from the RAWG API.
 
     Parameters:
     game_name (str): The name of the game to search for.
 
     Returns:
-    dict: A dictionary containing the game's information, or None if the game is not found.
+    dict: The raw game data from the API response.
     """
     url = f"{BASE_URL}/games"
-    params = {
-        'key': API_KEY,
-        'search': game_name
-    }
+    params = {'key': API_KEY, 'search': game_name}
 
     try:
         response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()  # Raise an HTTPError for bad responses
+        response.raise_for_status()
+        return response.json()
     except requests.Timeout:
         logging.error("The request timed out while trying to fetch game information.")
-        return None
     except requests.ConnectionError:
         logging.error("A network problem occurred while trying to fetch game information.")
-        return None
     except requests.HTTPError as e:
         if e.response.status_code == 404:
             logging.error("Game not found (404).")
         else:
             logging.error(f"HTTP error occurred while trying to fetch game information: {e.response.status_code} - {e.response.reason}")
-        return None
     except requests.RequestException as e:
         logging.error(f"An unexpected error occurred while trying to fetch game information: {e}")
-        return None
-
-    try:
-        data = response.json()
     except ValueError as e:
         logging.error(f"JSON decoding error occurred while processing the response: {e}")
-        return None
 
-    # Check if the API returned any results
-    if 'results' in data and isinstance(data['results'], list) and len(data['results']) > 0:
+    return None
+
+def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
+    """
+    Parses the game information from the API response.
+
+    Parameters:
+    data (dict): The raw game data from the API response.
+
+    Returns:
+    dict: Parsed game information.
+    """
+    if 'results' in data and isinstance(data['results'], list) and data['results']:
         game = data['results'][0]
-        # Ensure the expected keys are in the game data and validate their types
         if all(key in game for key in ['name', 'released', 'rating']):
             if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)):
-                return {
-                    'name': game['name'],
-                    'released': game['released'],
-                    'rating': game['rating'],
-                }
+                return {'name': game['name'], 'released': game['released'], 'rating': game['rating']}
             else:
                 logging.error("Unexpected data types in API response for game information.")
-                return None
         else:
             logging.error("Unexpected data format in API response for game information.")
-            return None
     else:
         logging.warning("No results found for the game.")
-        return None
+
+    return None
 
 def display_game_info(game_info: Optional[Dict[str, object]]) -> None:
     """
@@ -159,14 +154,16 @@ def main() -> Optional[Dict[str, object]]:
 
     try:
         sanitized_game_name = sanitize_game_name(args.game_name)
-        game_info = get_game_info(sanitized_game_name)
+        raw_data = fetch_game_data(sanitized_game_name)
+        game_info = parse_game_info(raw_data)
         display_game_info(game_info)
-        return game_info  # Return the game information
+        return game_info
     except InvalidInputError as e:
         logging.error(f"Input validation error: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-        return None  # Return None in case of an error
+
+    return None
 
 if __name__ == "__main__":
     main()
