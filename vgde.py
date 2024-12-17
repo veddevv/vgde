@@ -63,7 +63,7 @@ def check_api_key() -> None:
     Raises:
     MissingAPIKeyError: If the API key is not set.
     """
-    if not API_KEY:
+    if not API_KEY or API_KEY.strip() == "":
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
@@ -74,7 +74,7 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
     game_name (str): The name of the game to search for.
 
     Returns:
-    dict: The raw game data from the API response.
+    dict: The raw game data from the API response or None if an error occurs.
     """
     url = f"{BASE_URL}/games"
     params = {'key': API_KEY, 'search': game_name}
@@ -107,7 +107,7 @@ def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
     data (dict): The raw game data from the API response.
 
     Returns:
-    dict: Parsed game information.
+    dict: Parsed game information or None if the data is invalid.
     """
     if 'results' in data and isinstance(data['results'], list) and data['results']:
         game = data['results'][0]
