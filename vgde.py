@@ -64,6 +64,7 @@ def check_api_key() -> None:
     MissingAPIKeyError: If the API key is not set.
     """
     if not API_KEY or API_KEY.strip() == "":
+        logging.error("API key not found. Please set the RAWG_API_KEY environment variable.")
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
@@ -84,18 +85,16 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
         response.raise_for_status()
         return response.json()
     except requests.Timeout:
-        logging.error("The request timed out while trying to fetch game information.")
+        logging.error(f"The request timed out while trying to fetch game information for '{game_name}'.")
     except requests.ConnectionError:
-        logging.error("A network problem occurred while trying to fetch game information.")
+        logging.error(f"A network problem occurred while trying to fetch game information for '{game_name}'.")
     except requests.HTTPError as e:
-        if e.response.status_code == 404:
-            logging.error("Game not found (404).")
-        else:
-            logging.error(f"HTTP error occurred while trying to fetch game information: {e.response.status_code} - {e.response.reason}")
+        logging.error(f"HTTP error occurred while trying to fetch game information for '{game_name}': {e.response.status_code} - {e.response.reason}")
+        logging.error(f"Response content: {e.response.content}")
     except requests.RequestException as e:
-        logging.error(f"An unexpected error occurred while trying to fetch game information: {e}")
+        logging.error(f"An unexpected error occurred while trying to fetch game information for '{game_name}': {e}")
     except ValueError as e:
-        logging.error(f"JSON decoding error occurred while processing the response: {e}")
+        logging.error(f"JSON decoding error occurred while processing the response for '{game_name}': {e}")
 
     return None
 
