@@ -30,15 +30,6 @@ class InvalidInputError(Exception):
 def sanitize_game_name(game_name: str) -> str:
     """
     Validates and sanitizes the user input.
-
-    Parameters:
-    game_name (str): The name of the game to validate and sanitize.
-
-    Returns:
-    str: The sanitized game name.
-
-    Raises:
-    InvalidInputError: If the input is invalid.
     """
     if not isinstance(game_name, str):
         raise InvalidInputError("Invalid input. Game name must be a string.")
@@ -59,9 +50,6 @@ def sanitize_game_name(game_name: str) -> str:
 def check_api_key() -> None:
     """
     Checks if the RAWG API key is set.
-
-    Raises:
-    MissingAPIKeyError: If the API key is not set.
     """
     if not API_KEY or API_KEY.strip() == "":
         logging.error("API key not found. Please set the RAWG_API_KEY environment variable.")
@@ -70,12 +58,6 @@ def check_api_key() -> None:
 def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
     """
     Fetches game data from the RAWG API.
-
-    Parameters:
-    game_name (str): The name of the game to search for.
-
-    Returns:
-    dict: The raw game data from the API response or None if an error occurs.
     """
     url = f"{BASE_URL}/games"
     params = {'key': API_KEY, 'search': game_name}
@@ -84,14 +66,14 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
         response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
-    except requests.Timeout:
+    except requests.exceptions.Timeout:
         logging.error(f"The request timed out while trying to fetch game information for '{game_name}'.")
-    except requests.ConnectionError:
+    except requests.exceptions.ConnectionError:
         logging.error(f"A network problem occurred while trying to fetch game information for '{game_name}'.")
-    except requests.HTTPError as e:
+    except requests.exceptions.HTTPError as e:
         logging.error(f"HTTP error occurred while trying to fetch game information for '{game_name}': {e.response.status_code} - {e.response.reason}")
         logging.error(f"Response content: {e.response.content}")
-    except requests.RequestException as e:
+    except requests.exceptions.RequestException as e:
         logging.error(f"An unexpected error occurred while trying to fetch game information for '{game_name}': {e}")
     except ValueError as e:
         logging.error(f"JSON decoding error occurred while processing the response for '{game_name}': {e}")
@@ -101,18 +83,12 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
 def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
     """
     Parses the game information from the API response.
-
-    Parameters:
-    data (dict): The raw game data from the API response.
-
-    Returns:
-    dict: Parsed game information or None if the data is invalid.
     """
     if 'results' in data and isinstance(data['results'], list) and data['results']:
         game = data['results'][0]
         if all(key in game for key in ['name', 'released', 'rating']):
             if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)):
-                return {'name': game['name'], 'released': game['released'], 'rating': game['rating']}
+                return {key: game[key] for key in ['name', 'released', 'rating']}
             else:
                 logging.error("Unexpected data types in API response for game information.")
         else:
@@ -125,9 +101,6 @@ def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
 def display_game_info(game_info: Optional[Dict[str, object]]) -> None:
     """
     Displays information about a game.
-
-    Parameters:
-    game_info (dict): A dictionary containing the game's information.
     """
     if game_info:
         logging.info(f"Name: {game_info['name']}")
