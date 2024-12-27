@@ -4,20 +4,20 @@ import sys
 import logging
 import re
 from argparse import ArgumentParser
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 # Constants
 MAX_GAME_NAME_LENGTH = 100
 GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s]+$"
 DEFAULT_REQUEST_TIMEOUT = 10
+BASE_URL = 'https://api.rawg.io/api'
+REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
-BASE_URL = 'https://api.rawg.io/api'
-REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
 
 class MissingAPIKeyError(Exception):
     """Custom exception for missing API key."""
@@ -55,7 +55,7 @@ def check_api_key() -> None:
         logging.error("API key not found. Please set the RAWG_API_KEY environment variable.")
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
-def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
+def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     """
     Fetches game data from the RAWG API.
     """
@@ -80,7 +80,7 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, object]]:
 
     return None
 
-def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
+def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Parses the game information from the API response.
     """
@@ -98,7 +98,7 @@ def parse_game_info(data: Dict[str, object]) -> Optional[Dict[str, object]]:
 
     return None
 
-def display_game_info(game_info: Optional[Dict[str, object]]) -> None:
+def display_game_info(game_info: Optional[Dict[str, Any]]) -> None:
     """
     Displays information about a game.
     """
@@ -109,7 +109,7 @@ def display_game_info(game_info: Optional[Dict[str, object]]) -> None:
     else:
         logging.warning("No game information to display.")
 
-def main() -> Optional[Dict[str, object]]:
+def main() -> Optional[Dict[str, Any]]:
     """
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
