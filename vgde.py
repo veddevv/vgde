@@ -11,10 +11,21 @@ MAX_GAME_NAME_LENGTH = 100
 GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s]+$"
 DEFAULT_REQUEST_TIMEOUT = 10
 BASE_URL = 'https://api.rawg.io/api'
-REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Handle non-integer REQUEST_TIMEOUT values gracefully
+try:
+    REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
+except ValueError:
+    logging.warning(f"Invalid REQUEST_TIMEOUT value. Using default: {DEFAULT_REQUEST_TIMEOUT}")
+    REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
+
+# Configure logging for this script
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
@@ -52,7 +63,7 @@ def check_api_key() -> None:
     Checks if the RAWG API key is set.
     """
     if not API_KEY or API_KEY.strip() == "":
-        logging.error("API key not found. Please set the RAWG_API_KEY environment variable.")
+        logger.error("API key not found. Please set the RAWG_API_KEY environment variable.")
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
@@ -67,16 +78,16 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
         response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
-        logging.error(f"The request timed out while trying to fetch game information for '{game_name}'.")
+        logger.error(f"The request timed out while trying to fetch game information for '{game_name}'.")
     except requests.exceptions.ConnectionError:
-        logging.error(f"A network problem occurred while trying to fetch game information for '{game_name}'.")
+        logger.error(f"A network problem occurred while trying to fetch game information for '{game_name}'.")
     except requests.exceptions.HTTPError as e:
-        logging.error(f"HTTP error occurred while trying to fetch game information for '{game_name}': {e.response.status_code} - {e.response.reason}")
-        logging.error(f"Response content: {e.response.content}")
+        logger.error(f"HTTP error occurred while trying to fetch game information for '{game_name}': {e.response.status_code} - {e.response.reason}")
+        logger.error(f"Response content: {e.response.content}")
     except requests.exceptions.RequestException as e:
-        logging.error(f"An unexpected error occurred while trying to fetch game information for '{game_name}': {e}")
+        logger.error(f"An unexpected error occurred while trying to fetch game information for '{game_name}': {e}")
     except ValueError as e:
-        logging.error(f"JSON decoding error occurred while processing the response for '{game_name}': {e}")
+        logger.error(f"JSON decoding error occurred while processing the response for '{game_name}': {e}")
 
     return None
 
@@ -90,11 +101,11 @@ def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)):
                 return {key: game[key] for key in ['name', 'released', 'rating']}
             else:
-                logging.error("Unexpected data types in API response for game information.")
+                logger.error("Unexpected data types in API response for game information.")
         else:
-            logging.error("Unexpected data format in API response for game information.")
+            logger.error("Unexpected data format in API response for game information.")
     else:
-        logging.warning("No results found for the game.")
+        logger.warning("No results found for the game.")
 
     return None
 
@@ -103,11 +114,11 @@ def display_game_info(game_info: Optional[Dict[str, Any]]) -> None:
     Displays information about a game.
     """
     if game_info:
-        logging.info(f"Name: {game_info['name']}")
-        logging.info(f"Released: {game_info['released']}")
-        logging.info(f"Rating: {game_info['rating']}")
+        logger.info(f"Name: {game_info['name']}")
+        logger.info(f"Released: {game_info['released']}")
+        logger.info(f"Rating: {game_info['rating']}")
     else:
-        logging.warning("No game information to display.")
+        logger.warning("No game information to display.")
 
 def main() -> Optional[Dict[str, Any]]:
     """
@@ -121,7 +132,7 @@ def main() -> Optional[Dict[str, Any]]:
     try:
         check_api_key()
     except MissingAPIKeyError as e:
-        logging.error(f"API key error: {e}")
+        logger.error(f"API key error: {e}")
         sys.exit(1)
 
     try:
@@ -131,9 +142,11 @@ def main() -> Optional[Dict[str, Any]]:
         display_game_info(game_info)
         return game_info
     except InvalidInputError as e:
-        logging.error(f"Input validation error: {e}")
+        logger.error(f"Input validation error: {e}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request error: {e}")
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        logger.error(f"An unexpected error occurred: {e}")
 
     return None
 
