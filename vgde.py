@@ -97,9 +97,9 @@ def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     if 'results' in data and isinstance(data['results'], list) and data['results']:
         game = data['results'][0]
-        if all(key in game for key in ['name', 'released', 'rating']):
-            if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)):
-                return {key: game[key] for key in ['name', 'released', 'rating']}
+        if all(key in game for key in ['name', 'released', 'rating', 'description', 'background_image']):
+            if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)) and isinstance(game['description'], str) and isinstance(game['background_image'], str):
+                return {key: game[key] for key in ['name', 'released', 'rating', 'description', 'background_image']}
             else:
                 logger.error("Unexpected data types in API response for game information.")
         else:
@@ -117,6 +117,8 @@ def display_game_info(game_info: Optional[Dict[str, Any]]) -> None:
         logger.info(f"Name: {game_info['name']}")
         logger.info(f"Released: {game_info['released']}")
         logger.info(f"Rating: {game_info['rating']}")
+        logger.info(f"Description: {game_info['description']}")
+        logger.info(f"Background Image URL: {game_info['background_image']}")
     else:
         logger.warning("No game information to display.")
 
