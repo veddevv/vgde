@@ -30,9 +30,9 @@ logger.addHandler(handler)
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
 
-class MissingAPIKeyError(Exception):
-    """Custom exception for missing API key."""
-    pass
+if not API_KEY:
+    logger.error("RAWG API key not found in environment variables.")
+    sys.exit(1)
 
 class InvalidInputError(Exception):
     """Custom exception for invalid user input."""
