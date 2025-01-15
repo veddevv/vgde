@@ -1,12 +1,12 @@
 # vgde
 
-This Python script fetches and displays information about video games using the RAWG API. Simply enter the name of a game, and the script will provide details such as the game's release date, rating, etc.
+This Python script fetches and displays information about video games using the RAWG API. Simply enter the name of a game, and the script will provide details such as the game's release date, rating, description, and background image.
 
 ## Features
 - Fetches game information from the RAWG API.
 - Displays game name, release date, rating, description, and background image.
 - User-friendly prompts for game search.
-- Error handling for network issues and invalid input.
+- Error handling for network issues, invalid input, and missing RAWG API key.
 - Improved logging configuration for better debugging.
 - Graceful handling of non-integer request timeout values.
 
