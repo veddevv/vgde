@@ -29,7 +29,7 @@ This Python script fetches and displays information about video games using the 
 ## Usage
 1. Set the `RAWG_API_KEY` environment variable with your actual RAWG API key:
     ```sh
-    'RAWG_API_KEY='your_api_key_here'
+    RAWG_API_KEY='your_api_key_here'
     ```
 
 2. Run the script:
