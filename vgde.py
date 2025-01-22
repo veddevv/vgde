@@ -43,15 +43,10 @@ class InvalidInputError(Exception):
     """Custom exception for invalid user input."""
     pass
 
-def sanitize_game_name(game_name: str) -> str:
+def validate_game_name(game_name: str) -> str:
     """
-    Validates and sanitizes the user input.
+    Validates the game name.
     """
-    if not isinstance(game_name, str):
-        raise InvalidInputError("Invalid input. Game name must be a string.")
-
-    game_name = game_name.strip()
-
     if not game_name:
         raise InvalidInputError("Invalid input. Please enter a non-empty game name.")
 
@@ -73,15 +68,21 @@ def check_api_key() -> None:
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     """
-    Fetches game data from the RAWG API.
+    Fetches game data from the RAWG API and returns the first result.
     """
+    game_name = validate_game_name(game_name)
     url = f"{BASE_URL}/games"
     params = {'key': API_KEY, 'search': game_name}
 
     try:
         response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        if 'results' in data and len(data['results']) > 0:
+            return data['results'][0]
+        else:
+            logger.error(f"No results found for game '{game_name}'.")
+            return None
     except requests.exceptions.Timeout:
         logger.error(f"The request timed out while trying to fetch game information for '{game_name}'.")
     except requests.exceptions.ConnectionError:
@@ -92,8 +93,7 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     except requests.exceptions.RequestException as e:
         logger.error(f"An unexpected error occurred while trying to fetch game information for '{game_name}': {e}")
     except ValueError as e:
-        logger.error(f"JSON decoding error occurred while processing the response for '{game_name}': {e}")
-
+        logger.error(f"Error parsing the response JSON for game '{game_name}': {e}")
     return None
 
 def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -143,7 +143,7 @@ def main() -> Optional[Dict[str, Any]]:
         sys.exit(1)
 
     try:
-        sanitized_game_name = sanitize_game_name(args.game_name)
+        sanitized_game_name = validate_game_name(args.game_name)
         raw_data = fetch_game_data(sanitized_game_name)
         game_info = parse_game_info(raw_data)
         display_game_info(game_info)
