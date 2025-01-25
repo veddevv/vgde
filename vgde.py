@@ -100,18 +100,12 @@ def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Parses the game information from the API response.
     """
-    if 'results' in data and isinstance(data['results'], list) and data['results']:
-        game = data['results'][0]
-        if all(key in game for key in ['name', 'released', 'rating', 'description', 'background_image']):
-            if isinstance(game['name'], str) and isinstance(game['released'], str) and isinstance(game['rating'], (int, float)) and isinstance(game['description'], str) and isinstance(game['background_image'], str):
-                return {key: game[key] for key in ['name', 'released', 'rating', 'description', 'background_image']}
-            else:
-                logger.error("Unexpected data types in API response for game information.")
-        else:
-            logger.error("Unexpected data format in API response for game information.")
-    else:
-        logger.warning("No results found for the game.")
+    required_keys = ['name', 'released', 'rating', 'description', 'background_image']
+    
+    if all(key in data for key in required_keys):
+        return {key: data[key] for key in required_keys}
 
+    logger.error("Unexpected data format in API response for game information.")
     return None
 
 def display_game_info(game_info: Optional[Dict[str, Any]]) -> None:
