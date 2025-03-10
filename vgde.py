@@ -1,6 +1,5 @@
 import os
 import requests
-import sys
 import logging
 import re
 from argparse import ArgumentParser
@@ -11,6 +10,7 @@ MAX_GAME_NAME_LENGTH = 100
 GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s]+$"
 DEFAULT_REQUEST_TIMEOUT = 10
 BASE_URL = 'https://api.rawg.io/api'
+GAMES_ENDPOINT = '/games'
 
 # Handle non-integer REQUEST_TIMEOUT values gracefully
 try:
@@ -19,13 +19,18 @@ except ValueError:
     logging.warning(f"Invalid REQUEST_TIMEOUT value. Using default: {DEFAULT_REQUEST_TIMEOUT}")
     REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
-# Configure logging for this script
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+def configure_logging() -> logging.Logger:
+    """Configure logging for the script."""
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    return logger
+
+# Configure logging
+logger = configure_logging()
 
 # Retrieve the RAWG API key from environment variables
 API_KEY = os.getenv('RAWG_API_KEY')
@@ -33,7 +38,7 @@ API_KEY = os.getenv('RAWG_API_KEY')
 # Exit if the API key is not set
 if not API_KEY:
     logger.error("RAWG API key not found in environment variables.")
-    sys.exit(1)
+    exit(1)
 
 class MissingAPIKeyError(Exception):
     """Custom exception for missing API key."""
@@ -46,6 +51,15 @@ class InvalidInputError(Exception):
 def validate_game_name(game_name: str) -> str:
     """
     Validates the game name.
+    
+    Args:
+        game_name (str): The name of the game to validate.
+    
+    Returns:
+        str: The validated game name.
+    
+    Raises:
+        InvalidInputError: If the game name is invalid.
     """
     if not game_name:
         raise InvalidInputError("Invalid input. Please enter a non-empty game name.")
@@ -61,6 +75,9 @@ def validate_game_name(game_name: str) -> str:
 def check_api_key() -> None:
     """
     Checks if the RAWG API key is set.
+    
+    Raises:
+        MissingAPIKeyError: If the API key is not found.
     """
     if not API_KEY or API_KEY.strip() == "":
         logger.error("API key not found. Please set the RAWG_API_KEY environment variable.")
@@ -69,9 +86,15 @@ def check_api_key() -> None:
 def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     """
     Fetches game data from the RAWG API and returns the first result.
+    
+    Args:
+        game_name (str): The name of the game to fetch data for.
+    
+    Returns:
+        Optional[Dict[str, Any]]: The fetched game data or None if not found.
     """
     game_name = validate_game_name(game_name)
-    url = f"{BASE_URL}/games"
+    url = f"{BASE_URL}{GAMES_ENDPOINT}"
     params = {'key': API_KEY, 'search': game_name}
 
     try:
@@ -99,6 +122,12 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
 def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Parses the game information from the API response.
+    
+    Args:
+        data (Dict[str, Any]): The raw game data from the API.
+    
+    Returns:
+        Optional[Dict[str, Any]]: The parsed game information or None if data format is unexpected.
     """
     required_keys = ['name', 'released', 'rating', 'description', 'background_image']
     
@@ -111,6 +140,9 @@ def parse_game_info(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def display_game_info(game_info: Optional[Dict[str, Any]]) -> None:
     """
     Displays information about a game.
+    
+    Args:
+        game_info (Optional[Dict[str, Any]]): The game information to display.
     """
     if game_info:
         logger.info(f"Name: {game_info['name']}")
@@ -125,6 +157,9 @@ def main() -> Optional[Dict[str, Any]]:
     """
     Main function to run the script.
     Prompts the user to enter the name of a game and displays its information.
+    
+    Returns:
+        Optional[Dict[str, Any]]: The game information or None if an error occurred.
     """
     parser = ArgumentParser(description="Fetch game information from RAWG API.")
     parser.add_argument('game_name', type=str, help="The name of the game to search for.")
@@ -134,7 +169,7 @@ def main() -> Optional[Dict[str, Any]]:
         check_api_key()
     except MissingAPIKeyError as e:
         logger.error(f"API key error: {e}")
-        sys.exit(1)
+        exit(1)
 
     try:
         sanitized_game_name = validate_game_name(args.game_name)
