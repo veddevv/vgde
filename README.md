@@ -1,14 +1,16 @@
-# vgde
+# vgde (Video Game Data Explorer)
 
 This Python script fetches and displays information about video games using the RAWG API. Simply enter the name of a game, and the script will provide details such as the game's release date, rating, description, and background image.
 
 ## Features
-- Fetches game information from the RAWG API.
-- Displays game name, release date, rating, description, and background image.
-- User-friendly prompts for game search.
-- Error handling for network issues, invalid input, and missing RAWG API key.
-- Improved logging configuration for better debugging.
-- Graceful handling of non-integer request timeout values.
+- Fetches game information from the RAWG API
+- Displays game name, release date, rating, description, and background image
+- Supports both command-line arguments and interactive input mode
+- Error handling for network issues, invalid input, and missing API key
+- Developer mode for detailed logging and debugging information
+- HTML tag stripping for cleaner description display
+- Truncation of long descriptions for better readability
+- Custom timeout configuration via environment variables
 
 ## Requirements
 - Python 3.x
@@ -29,21 +31,25 @@ This Python script fetches and displays information about video games using the 
 ## Usage
 1. Set the `RAWG_API_KEY` environment variable with your actual RAWG API key:
     ```sh
-    RAWG_API_KEY='your_api_key_here'
+    export RAWG_API_KEY='your_api_key_here'
     ```
 
-2. Run the script:
+2. Run the script using either method:
     ```sh
+    # Interactive mode
     python vgde.py
+    
+    # Direct mode with command-line argument
+    python vgde.py "The Witcher 3"
     ```
 
-3. Enter the name of the game when prompted.
+## Configuration Options
+The script supports the following environment variables:
 
-## Developer Mode
-- Enable developer mode for extra technical details by setting the `DEVELOPER_MODE` flag to `True` in the script.
+- `RAWG_API_KEY` (required): Your RAWG API key
+- `DEVELOPER_MODE`: Set to `true`, `1`, or `t` to enable developer mode with detailed logging
+- `REQUEST_TIMEOUT`: Set a custom timeout in seconds for API requests (default: 10)
 
-## Contributing
-- Contributions are welcome! Please fork the repository and submit a pull request.
-
-## License
-- This project is licensed under the GPL Version 3.0 License.
+Example with all options:
+```sh
+RAWG_API_KEY='your_key' DEVELOPER_MODE=true REQUEST_TIMEOUT=15 python vgde.py
