@@ -3,7 +3,6 @@ import os
 import re
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from typing import Optional, Dict, Any
-
 import requests
 
 # Constants
