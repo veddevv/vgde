@@ -1,9 +1,10 @@
-import os
-import requests
 import logging
+import os
 import re
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any
+
+import requests
 
 # Constants
 MAX_GAME_NAME_LENGTH = 100
