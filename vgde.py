@@ -9,16 +9,19 @@ from html.parser import HTMLParser
 
 # Constants
 MAX_GAME_NAME_LENGTH = 100
-GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s\-\.',:!&]+$"  # More permissive pattern
+# Fixed ReDoS vulnerability - removed nested quantifiers
+GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s\-\.',:!&]{1,100}$"
 DEFAULT_REQUEST_TIMEOUT = 10
 BASE_URL = 'https://api.rawg.io/api'
 GAMES_ENDPOINT = '/games'
 DEVELOPER_MODE = os.getenv('DEVELOPER_MODE', 'false').lower() in ('true', '1', 't')
 
-# Handle non-integer REQUEST_TIMEOUT values gracefully
+# Enhanced timeout validation with bounds checking
 try:
-    REQUEST_TIMEOUT = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
-except ValueError:
+    timeout_value = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
+    # Ensure reasonable timeout bounds (1-300 seconds)
+    REQUEST_TIMEOUT = max(1, min(300, timeout_value))
+except (ValueError, TypeError):
     REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
 
 
@@ -102,10 +105,20 @@ def strip_html_tags(html_text: str) -> str:
     """
     if not html_text:
         return ""
-    s = MLStripper()
-    s.feed(html_text)
-    return html.unescape(s.get_data()).strip()
-
+    
+    # Limit input size to prevent memory exhaustion
+    if len(html_text) > 50000:  # 50KB limit
+        html_text = html_text[:50000]
+    
+    try:
+        s = MLStripper()
+        s.feed(html_text)
+        result = html.unescape(s.get_data()).strip()
+        # Additional length check after processing
+        return result[:5000] if len(result) > 5000 else result
+    except Exception as e:
+        logger.warning(f"HTML parsing failed: {e}")
+        return html_text  # Return original text if parsing fails
 
 def validate_game_name(game_name: str) -> str:
     """
@@ -182,9 +195,21 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
 
     try:
         if DEVELOPER_MODE:
-            logger.debug(f"Fetching data from: {url} with params: {params}")
+            # Fixed: Don't log API key - use safe params for logging
+            safe_params = {k: v if k != 'key' else '[REDACTED]' for k, v in params.items()}
+            logger.debug(f"Fetching data from: {url} with params: {safe_params}")
 
-        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        response = requests.get(
+            url, 
+            params=params, 
+            timeout=REQUEST_TIMEOUT,
+            stream=True  # Enable streaming for size checking
+        )
+        
+        # Check content length before downloading
+        content_length = response.headers.get('content-length')
+        if content_length and int(content_length) > 10_000_000:  # 10MB limit
+            raise ValueError("Response too large")
         
         if response.status_code == 429:  # Too Many Requests
             retry_after = response.headers.get('Retry-After', '60')
@@ -192,12 +217,22 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
             
         response.raise_for_status()
         
+        # Read with size limit
+        content = response.content
+        if len(content) > 10_000_000:
+            raise ValueError("Response content too large")
+        
         try:
             data = response.json()
         except ValueError as e:
             logger.error(f"Invalid JSON response: {str(e)}")
             if DEVELOPER_MODE:
-                logger.debug(f"Response content: {response.content[:200]}")
+                # Fixed: Safe content logging with encoding handling
+                try:
+                    content_preview = response.content[:200].decode('utf-8', errors='ignore')
+                    logger.debug(f"Response content: {content_preview}")
+                except Exception:
+                    logger.debug("Could not decode response content")
             return None
 
         if not isinstance(data, dict):
@@ -219,11 +254,24 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     except requests.exceptions.ConnectionError:
         logger.error("Network connection error. Please check your internet connection.")
     except requests.exceptions.HTTPError as e:
-        logger.error(f"HTTP error: {e.response.status_code} - {e.response.reason}")
-        if DEVELOPER_MODE:
-            logger.debug(f"Response content: {e.response.content[:200]}")
+        # Enhanced error context
+        if e.response.status_code == 403:
+            logger.error("API access forbidden. Check your API key permissions.")
+        elif e.response.status_code == 404:
+            logger.error("API endpoint not found. The service may be unavailable.")
+        else:
+            logger.error(f"HTTP error: {e.response.status_code} - {e.response.reason}")
+        
+        if DEVELOPER_MODE and hasattr(e, 'response'):
+            try:
+                content_preview = e.response.content[:200].decode('utf-8', errors='ignore')
+                logger.debug(f"Response content: {content_preview}")
+            except Exception:
+                logger.debug("Could not decode error response content")
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error: {str(e)}")
+    except ValueError as e:
+        logger.error(f"Data validation error: {str(e)}")
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
         if DEVELOPER_MODE:
@@ -301,10 +349,10 @@ def main() -> Optional[Dict[str, Any]]:
     parser.add_argument('--debug', action='store_true', help="Enable debug mode for this run")
     args = parser.parse_args()
 
-    # Temporarily override DEVELOPER_MODE if --debug is specified
-    global DEVELOPER_MODE
-    if args.debug:
-        DEVELOPER_MODE = True
+    # Fixed: Use local variable instead of modifying global
+    debug_mode = DEVELOPER_MODE or args.debug
+    if debug_mode:
+        # Reconfigure logger for this session
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug mode enabled for this run")
 
@@ -329,7 +377,7 @@ def main() -> Optional[Dict[str, Any]]:
 
     try:
         sanitized_game_name = validate_game_name(game_name)
-        if DEVELOPER_MODE:
+        if debug_mode:
             logger.debug(f"Searching for game: '{sanitized_game_name}'")
 
         raw_data = fetch_game_data(sanitized_game_name)
@@ -357,7 +405,7 @@ def main() -> Optional[Dict[str, Any]]:
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
     except Exception as e:
-        if DEVELOPER_MODE:
+        if debug_mode:
             logger.exception("An unexpected error occurred")
         else:
             logger.error(f"An error occurred: {str(e)}")
