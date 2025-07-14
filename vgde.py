@@ -2,27 +2,43 @@ import logging
 import os
 import re
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-from typing import Optional, Dict, Any
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, List, Union
 import requests
 import html
 from html.parser import HTMLParser
 
-# Constants
-MAX_GAME_NAME_LENGTH = 100
-# Fixed ReDoS vulnerability - removed nested quantifiers
-GAME_NAME_PATTERN = r"^[a-zA-Z0-9\s\-\.',:!&]{1,100}$"
-DEFAULT_REQUEST_TIMEOUT = 10
-BASE_URL = 'https://api.rawg.io/api'
-GAMES_ENDPOINT = '/games'
+@dataclass(frozen=True)
+class Config:
+    """Configuration constants for the application."""
+    MAX_GAME_NAME_LENGTH: int = 100
+    GAME_NAME_PATTERN: str = r"^[a-zA-Z0-9\s\-\.',:!&]{1,100}$"
+    DEFAULT_REQUEST_TIMEOUT: int = 10
+    BASE_URL: str = 'https://api.rawg.io/api'
+    GAMES_ENDPOINT: str = '/games'
+    MAX_RESPONSE_SIZE: int = 10_000_000  # 10MB
+    MAX_HTML_SIZE: int = 50_000  # 50KB
+    MAX_DESCRIPTION_SIZE: int = 5_000
+    MAX_DISPLAY_DESCRIPTION: int = 300
+
+# Create config instance
+config = Config()
+
+# Constants (using config values for backward compatibility)
+MAX_GAME_NAME_LENGTH = config.MAX_GAME_NAME_LENGTH
+GAME_NAME_PATTERN = config.GAME_NAME_PATTERN
+DEFAULT_REQUEST_TIMEOUT = config.DEFAULT_REQUEST_TIMEOUT
+BASE_URL = config.BASE_URL
+GAMES_ENDPOINT = config.GAMES_ENDPOINT
 DEVELOPER_MODE = os.getenv('DEVELOPER_MODE', 'false').lower() in ('true', '1', 't')
 
 # Enhanced timeout validation with bounds checking
 try:
-    timeout_value = int(os.getenv('REQUEST_TIMEOUT', DEFAULT_REQUEST_TIMEOUT))
+    timeout_value = int(os.getenv('REQUEST_TIMEOUT', config.DEFAULT_REQUEST_TIMEOUT))
     # Ensure reasonable timeout bounds (1-300 seconds)
     REQUEST_TIMEOUT = max(1, min(300, timeout_value))
 except (ValueError, TypeError):
-    REQUEST_TIMEOUT = DEFAULT_REQUEST_TIMEOUT
+    REQUEST_TIMEOUT = config.DEFAULT_REQUEST_TIMEOUT
 
 
 def configure_logging() -> logging.Logger:
@@ -102,20 +118,24 @@ def strip_html_tags(html_text: str) -> str:
         
     Returns:
         str: Clean text with preserved structure
+        
+    Example:
+        >>> strip_html_tags("<p>Hello <b>world</b>!</p>")
+        'Hello world!'
     """
     if not html_text:
         return ""
     
     # Limit input size to prevent memory exhaustion
-    if len(html_text) > 50000:  # 50KB limit
-        html_text = html_text[:50000]
+    if len(html_text) > config.MAX_HTML_SIZE:
+        html_text = html_text[:config.MAX_HTML_SIZE]
     
     try:
         s = MLStripper()
         s.feed(html_text)
         result = html.unescape(s.get_data()).strip()
         # Additional length check after processing
-        return result[:5000] if len(result) > 5000 else result
+        return result[:config.MAX_DESCRIPTION_SIZE] if len(result) > config.MAX_DESCRIPTION_SIZE else result
     except Exception as e:
         logger.warning(f"HTML parsing failed: {e}")
         return html_text  # Return original text if parsing fails
@@ -132,6 +152,10 @@ def validate_game_name(game_name: str) -> str:
 
     Raises:
         InvalidInputError: If the game name is invalid.
+        
+    Example:
+        >>> validate_game_name("  The Witcher 3  ")
+        'The Witcher 3'
     """
     if not isinstance(game_name, str):
         raise InvalidInputError("Game name must be a string.")
@@ -142,10 +166,31 @@ def validate_game_name(game_name: str) -> str:
     if not game_name:
         raise InvalidInputError("Game name cannot be empty.")
 
-    if len(game_name) > MAX_GAME_NAME_LENGTH:
-        raise InvalidInputError(f"Game name is too long (max {MAX_GAME_NAME_LENGTH} characters).")
+    if len(game_name) > config.MAX_GAME_NAME_LENGTH:
+        raise InvalidInputError(f"Game name is too long (max {config.MAX_GAME_NAME_LENGTH} characters).")
 
     # Replace smart quotes and other special characters with standard ones
+    game_name = _normalize_special_characters(game_name)
+
+    if not re.match(config.GAME_NAME_PATTERN, game_name):
+        raise InvalidInputError(
+            "Game name contains invalid characters. Only letters, numbers, spaces, "
+            "and the following special characters are allowed: - . ' , : ! &"
+        )
+
+    return game_name
+
+
+def _normalize_special_characters(text: str) -> str:
+    """
+    Normalize special characters in text.
+    
+    Args:
+        text (str): Text to normalize
+        
+    Returns:
+        str: Normalized text
+    """
     replacements = {
         '\u201c': '"',  # left double quote
         '\u201d': '"',  # right double quote
@@ -155,15 +200,8 @@ def validate_game_name(game_name: str) -> str:
         '\u2014': '-'   # em dash
     }
     for old, new in replacements.items():
-        game_name = game_name.replace(old, new)
-
-    if not re.match(GAME_NAME_PATTERN, game_name):
-        raise InvalidInputError(
-            "Game name contains invalid characters. Only letters, numbers, spaces, "
-            "and the following special characters are allowed: - . ' , : ! &"
-        )
-
-    return game_name
+        text = text.replace(old, new)
+    return text
 
 
 def check_api_key() -> None:
@@ -175,6 +213,47 @@ def check_api_key() -> None:
     """
     if not API_KEY or API_KEY.strip() == "":
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
+
+
+def _validate_api_response(data: Any) -> bool:
+    """
+    Validate the structure of API response data.
+    
+    Args:
+        data: The API response data to validate
+        
+    Returns:
+        bool: True if the response structure is valid
+    """
+    if not isinstance(data, dict):
+        return False
+    
+    if 'results' not in data:
+        return False
+        
+    if not isinstance(data['results'], list):
+        return False
+        
+    return True
+
+
+def _check_content_size(response: requests.Response) -> None:
+    """
+    Check if response content size is within limits.
+    
+    Args:
+        response: The HTTP response object
+        
+    Raises:
+        ValueError: If content is too large
+    """
+    content_length = response.headers.get('content-length')
+    if content_length and int(content_length) > config.MAX_RESPONSE_SIZE:
+        raise ValueError("Response too large")
+    
+    content = response.content
+    if len(content) > config.MAX_RESPONSE_SIZE:
+        raise ValueError("Response content too large")
 
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
@@ -206,21 +285,13 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
             stream=True  # Enable streaming for size checking
         )
         
-        # Check content length before downloading
-        content_length = response.headers.get('content-length')
-        if content_length and int(content_length) > 10_000_000:  # 10MB limit
-            raise ValueError("Response too large")
-        
+        _check_content_size(response)
+
         if response.status_code == 429:  # Too Many Requests
             retry_after = response.headers.get('Retry-After', '60')
             raise RateLimitError(f"API rate limit exceeded. Try again in {retry_after} seconds.")
             
         response.raise_for_status()
-        
-        # Read with size limit
-        content = response.content
-        if len(content) > 10_000_000:
-            raise ValueError("Response content too large")
         
         try:
             data = response.json()
@@ -235,7 +306,7 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
                     logger.debug("Could not decode response content")
             return None
 
-        if not isinstance(data, dict):
+        if not _validate_api_response(data):
             logger.error("Unexpected API response format")
             return None
 
@@ -288,6 +359,12 @@ def parse_game_info(data: Dict[str, Any]) -> Dict[str, Any]:
 
     Returns:
         Dict[str, Any]: The parsed game information with missing fields set to None.
+        
+    Example:
+        >>> data = {'name': 'Test Game', 'released': '2020-01-01', 'rating': 4.5}
+        >>> info = parse_game_info(data)
+        >>> info['name']
+        'Test Game'
     """
     required_keys = ['name', 'released', 'rating', 'description', 'background_image']
     game_info = {}
@@ -327,10 +404,37 @@ def display_game_info(game_info: Dict[str, Any]) -> None:
         # Strip HTML tags for cleaner console output
         description = strip_html_tags(game_info['description'])
         print("\nDescription:")
-        print(description[:300] + ("..." if len(description) > 300 else ""))
+        print(description[:config.MAX_DISPLAY_DESCRIPTION] + ("..." if len(description) > config.MAX_DISPLAY_DESCRIPTION else ""))
 
     if game_info['background_image']:
         print(f"\nBackground Image: {game_info['background_image']}")
+
+
+def _provide_search_suggestions(game_name: str) -> List[str]:
+    """
+    Provide search suggestions when no game is found.
+    
+    Args:
+        game_name (str): The original game name that wasn't found
+        
+    Returns:
+        List[str]: List of helpful suggestions
+    """
+    suggestions = [
+        "Check if the game name is spelled correctly",
+        "Try using the official game title",
+        "Remove any special characters or symbols",
+        "Try a shorter or more specific name"
+    ]
+    
+    # Add specific suggestions based on input characteristics
+    if len(game_name) > 50:
+        suggestions.insert(2, "Try a shorter version of the game name")
+    
+    if any(char in game_name for char in ['™', '®', '©']):
+        suggestions.insert(2, "Remove trademark symbols (™, ®, ©)")
+        
+    return suggestions
 
 
 def main() -> Optional[Dict[str, Any]]:
@@ -386,12 +490,7 @@ def main() -> Optional[Dict[str, Any]]:
             display_game_info(game_info)
             return game_info
         else:
-            suggestions = [
-                "Check if the game name is spelled correctly",
-                "Try using the official game title",
-                "Remove any special characters or symbols",
-                "Try a shorter or more specific name"
-            ]
+            suggestions = _provide_search_suggestions(sanitized_game_name)
             print(f"\nNo game found matching '{sanitized_game_name}'.")
             print("\nSuggestions:")
             for suggestion in suggestions:
