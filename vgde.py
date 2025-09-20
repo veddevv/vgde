@@ -24,13 +24,18 @@ class Config:
 # Create config instance
 config = Config()
 
-# Constants (using config values for backward compatibility)
-MAX_GAME_NAME_LENGTH = config.MAX_GAME_NAME_LENGTH
-GAME_NAME_PATTERN = config.GAME_NAME_PATTERN
-DEFAULT_REQUEST_TIMEOUT = config.DEFAULT_REQUEST_TIMEOUT
-BASE_URL = config.BASE_URL
-GAMES_ENDPOINT = config.GAMES_ENDPOINT
-DEVELOPER_MODE = os.getenv('DEVELOPER_MODE', 'false').lower() in ('true', '1', 't')
+# Pre-compile regex pattern for better performance
+GAME_NAME_REGEX = re.compile(config.GAME_NAME_PATTERN)
+
+# More robust DEVELOPER_MODE parsing
+def _parse_boolean_env(value: str, default: bool = False) -> bool:
+    """Parse environment variable as boolean with various truthy/falsey values."""
+    if not value:
+        return default
+    value = value.lower().strip()
+    return value in ('true', '1', 't', 'yes', 'y', 'on', 'enable', 'enabled')
+
+DEVELOPER_MODE = _parse_boolean_env(os.getenv('DEVELOPER_MODE', 'false'))
 
 # Enhanced timeout validation with bounds checking
 try:
@@ -136,9 +141,13 @@ def strip_html_tags(html_text: str) -> str:
         result = html.unescape(s.get_data()).strip()
         # Additional length check after processing
         return result[:config.MAX_DESCRIPTION_SIZE] if len(result) > config.MAX_DESCRIPTION_SIZE else result
-    except Exception as e:
+    except (html.parser.HTMLParseError, UnicodeDecodeError, UnicodeError) as e:
         logger.warning(f"HTML parsing failed: {e}")
         return html_text  # Return original text if parsing fails
+    except Exception as e:
+        # Log unexpected errors but still handle gracefully
+        logger.warning(f"Unexpected error during HTML parsing: {e}")
+        return html_text
 
 def validate_game_name(game_name: str) -> str:
     """
@@ -172,7 +181,7 @@ def validate_game_name(game_name: str) -> str:
     # Replace smart quotes and other special characters with standard ones
     game_name = _normalize_special_characters(game_name)
 
-    if not re.match(config.GAME_NAME_PATTERN, game_name):
+    if not GAME_NAME_REGEX.match(game_name):
         raise InvalidInputError(
             "Game name contains invalid characters. Only letters, numbers, spaces, "
             "and the following special characters are allowed: - . ' , : ! &"
@@ -247,13 +256,18 @@ def _check_content_size(response: requests.Response) -> None:
     Raises:
         ValueError: If content is too large
     """
+    # Primary guard: Check content-length header first to avoid reading large content
     content_length = response.headers.get('content-length')
     if content_length and int(content_length) > config.MAX_RESPONSE_SIZE:
         raise ValueError("Response too large")
     
-    content = response.content
-    if len(content) > config.MAX_RESPONSE_SIZE:
-        raise ValueError("Response content too large")
+    # If no content-length header, we need to check actual content size
+    # but only read it once when necessary
+    if not content_length and not hasattr(response, '_content_checked'):
+        content = response.content  # This will cache the content
+        if len(content) > config.MAX_RESPONSE_SIZE:
+            raise ValueError("Response content too large")
+        response._content_checked = True
 
 
 def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
@@ -269,7 +283,7 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
     Raises:
         RateLimitError: If the API rate limit is exceeded.
     """
-    url = f"{BASE_URL}{GAMES_ENDPOINT}"
+    url = f"{config.BASE_URL}{config.GAMES_ENDPOINT}"
     params = {'key': API_KEY, 'search': game_name}
 
     try:
@@ -310,14 +324,12 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
             logger.error("Unexpected API response format")
             return None
 
-        if 'results' in data and isinstance(data['results'], list):
-            if len(data['results']) > 0:
-                return data['results'][0]
-            else:
-                logger.warning(f"No results found for game '{game_name}'.")
-                return None
+        # Since _validate_api_response already confirmed structure, we can safely access results
+        results = data['results']
+        if len(results) > 0:
+            return results[0]
         else:
-            logger.error("Unexpected API response structure")
+            logger.warning(f"No results found for game '{game_name}'.")
             return None
 
     except requests.exceptions.Timeout:
