@@ -20,6 +20,8 @@ class Config:
     MAX_HTML_SIZE: int = 50_000  # 50KB
     MAX_DESCRIPTION_SIZE: int = 5_000
     MAX_DISPLAY_DESCRIPTION: int = 300
+    MIN_TIMEOUT: int = 1
+    MAX_TIMEOUT: int = 300
 
 # Create config instance
 config = Config()
@@ -38,12 +40,23 @@ def _parse_boolean_env(value: str, default: bool = False) -> bool:
 DEVELOPER_MODE = _parse_boolean_env(os.getenv('DEVELOPER_MODE', 'false'))
 
 # Enhanced timeout validation with bounds checking
-try:
-    timeout_value = int(os.getenv('REQUEST_TIMEOUT', config.DEFAULT_REQUEST_TIMEOUT))
-    # Ensure reasonable timeout bounds (1-300 seconds)
-    REQUEST_TIMEOUT = max(1, min(300, timeout_value))
-except (ValueError, TypeError):
-    REQUEST_TIMEOUT = config.DEFAULT_REQUEST_TIMEOUT
+def _get_validated_timeout() -> int:
+    """Get and validate timeout from environment."""
+    try:
+        timeout_str = os.getenv('REQUEST_TIMEOUT')
+        if timeout_str is None:
+            return config.DEFAULT_REQUEST_TIMEOUT
+        timeout_str = timeout_str.strip()
+        if not timeout_str:
+            return config.DEFAULT_REQUEST_TIMEOUT
+        timeout_value = int(timeout_str)
+        # Ensure reasonable timeout bounds using config constants
+        return max(config.MIN_TIMEOUT, min(config.MAX_TIMEOUT, timeout_value))
+    except (ValueError, TypeError, OverflowError):
+        logger.warning(f"Invalid REQUEST_TIMEOUT value, using default: {config.DEFAULT_REQUEST_TIMEOUT}")
+        return config.DEFAULT_REQUEST_TIMEOUT
+
+REQUEST_TIMEOUT = _get_validated_timeout()
 
 
 def configure_logging() -> logging.Logger:
@@ -75,7 +88,20 @@ def configure_logging() -> logging.Logger:
 logger = configure_logging()
 
 # Retrieve the RAWG API key from environment variables
-API_KEY = os.getenv('RAWG_API_KEY')
+def _get_validated_api_key() -> Optional[str]:
+    """Get and validate API key from environment."""
+    api_key = os.getenv('RAWG_API_KEY')
+    if not api_key:
+        return None
+    # Remove any whitespace
+    api_key = api_key.strip()
+    # Basic validation: API keys should be alphanumeric with possible hyphens
+    if not api_key or len(api_key) < 10 or len(api_key) > 100:
+        logger.warning("API key appears to be invalid (wrong length)")
+        return None
+    return api_key
+
+API_KEY = _get_validated_api_key()
 
 
 class MissingAPIKeyError(Exception):
@@ -101,15 +127,37 @@ class MLStripper(HTMLParser):
         self.strict = False
         self.convert_charrefs = True
         self.text = []
+        self._char_count = 0
+        self._max_chars = config.MAX_DESCRIPTION_SIZE
 
     def handle_data(self, d):
+        # Prevent excessive memory usage
+        if self._char_count >= self._max_chars:
+            return
+        if self._char_count + len(d) > self._max_chars:
+            d = d[:self._max_chars - self._char_count]
         self.text.append(d)
+        self._char_count += len(d)
 
     def handle_entityref(self, name):
-        self.text.append(f"&{name};")
+        if self._char_count >= self._max_chars:
+            return
+        # Prevent entity expansion attacks
+        if len(name) > 20:  # Reasonable limit for entity names
+            return
+        entity = f"&{name};"
+        self.text.append(entity)
+        self._char_count += len(entity)
 
     def handle_charref(self, name):
-        self.text.append(f"&#{name};")
+        if self._char_count >= self._max_chars:
+            return
+        # Validate character reference
+        if len(name) > 10:  # Reasonable limit for numeric refs
+            return
+        charref = f"&#{name};"
+        self.text.append(charref)
+        self._char_count += len(charref)
 
     def get_data(self):
         return ''.join(self.text)
@@ -220,7 +268,7 @@ def check_api_key() -> None:
     Raises:
         MissingAPIKeyError: If the API key is not found.
     """
-    if not API_KEY or API_KEY.strip() == "":
+    if not API_KEY:
         raise MissingAPIKeyError("API key not found. Please set the RAWG_API_KEY environment variable.")
 
 
@@ -258,15 +306,20 @@ def _check_content_size(response: requests.Response) -> None:
     """
     # Primary guard: Check content-length header first to avoid reading large content
     content_length = response.headers.get('content-length')
-    if content_length and int(content_length) > config.MAX_RESPONSE_SIZE:
-        raise ValueError("Response too large")
+    if content_length:
+        try:
+            content_length_int = int(content_length)
+            if content_length_int > config.MAX_RESPONSE_SIZE:
+                raise ValueError(f"Response too large: {content_length_int} bytes (max {config.MAX_RESPONSE_SIZE})")
+        except (ValueError, OverflowError) as e:
+            logger.warning(f"Invalid content-length header: {e}")
     
     # If no content-length header, we need to check actual content size
     # but only read it once when necessary
     if not content_length and not hasattr(response, '_content_checked'):
         content = response.content  # This will cache the content
         if len(content) > config.MAX_RESPONSE_SIZE:
-            raise ValueError("Response content too large")
+            raise ValueError(f"Response content too large: {len(content)} bytes (max {config.MAX_RESPONSE_SIZE})")
         response._content_checked = True
 
 
@@ -296,7 +349,14 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
             url, 
             params=params, 
             timeout=REQUEST_TIMEOUT,
-            stream=True  # Enable streaming for size checking
+            stream=True,  # Enable streaming for size checking
+            allow_redirects=True,
+            verify=True,  # Always verify SSL certificates
+            headers={
+                'User-Agent': 'vgde-game-explorer/1.0',
+                'Accept': 'application/json',
+                'Accept-Encoding': 'gzip, deflate'
+            }
         )
         
         _check_content_size(response)
@@ -314,10 +374,13 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
             if DEVELOPER_MODE:
                 # Fixed: Safe content logging with encoding handling
                 try:
-                    content_preview = response.content[:200].decode('utf-8', errors='ignore')
+                    # Ensure response encoding is set correctly
+                    if response.encoding is None:
+                        response.encoding = 'utf-8'
+                    content_preview = response.text[:200]
                     logger.debug(f"Response content: {content_preview}")
-                except Exception:
-                    logger.debug("Could not decode response content")
+                except Exception as ex:
+                    logger.debug(f"Could not decode response content: {ex}")
             return None
 
         if not _validate_api_response(data):
@@ -334,6 +397,10 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
 
     except requests.exceptions.Timeout:
         logger.error(f"Request timed out after {REQUEST_TIMEOUT} seconds.")
+    except requests.exceptions.SSLError as e:
+        logger.error("SSL certificate verification failed. The connection is not secure.")
+        if DEVELOPER_MODE:
+            logger.debug(f"SSL Error details: {str(e)}")
     except requests.exceptions.ConnectionError:
         logger.error("Network connection error. Please check your internet connection.")
     except requests.exceptions.HTTPError as e:
@@ -345,12 +412,14 @@ def fetch_game_data(game_name: str) -> Optional[Dict[str, Any]]:
         else:
             logger.error(f"HTTP error: {e.response.status_code} - {e.response.reason}")
         
-        if DEVELOPER_MODE and hasattr(e, 'response'):
+        if DEVELOPER_MODE and hasattr(e, 'response') and e.response is not None:
             try:
-                content_preview = e.response.content[:200].decode('utf-8', errors='ignore')
+                if e.response.encoding is None:
+                    e.response.encoding = 'utf-8'
+                content_preview = e.response.text[:200]
                 logger.debug(f"Response content: {content_preview}")
-            except Exception:
-                logger.debug("Could not decode error response content")
+            except Exception as ex:
+                logger.debug(f"Could not decode error response content: {ex}")
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error: {str(e)}")
     except ValueError as e:
