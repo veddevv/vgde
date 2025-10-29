@@ -171,11 +171,3 @@ vgde implements several security measures to protect your system and data:
   ```sh
   python vgde.py "Game Name" --debug
   ```
-
----
-
-## 📋 Requirements
-
-- **Python:** 3.7 or higher recommended
-- **Dependencies:** See `requirements.txt`
-  - `requests~=2.32.3`
