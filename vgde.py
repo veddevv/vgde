@@ -3,7 +3,7 @@ import os
 import re
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List
 import requests
 import html
 from html.parser import HTMLParser
@@ -40,7 +40,7 @@ def _parse_boolean_env(value: str, default: bool = False) -> bool:
 DEVELOPER_MODE = _parse_boolean_env(os.getenv('DEVELOPER_MODE', 'false'))
 
 # Enhanced timeout validation with bounds checking
-def _get_validated_timeout() -> int:
+def _get_validated_timeout(logger_instance: Optional[logging.Logger] = None) -> int:
     """Get and validate timeout from environment."""
     try:
         timeout_str = os.getenv('REQUEST_TIMEOUT')
@@ -53,10 +53,10 @@ def _get_validated_timeout() -> int:
         # Ensure reasonable timeout bounds using config constants
         return max(config.MIN_TIMEOUT, min(config.MAX_TIMEOUT, timeout_value))
     except (ValueError, TypeError, OverflowError):
-        logger.warning(f"Invalid REQUEST_TIMEOUT value, using default: {config.DEFAULT_REQUEST_TIMEOUT}")
+        if logger_instance:
+            logger_instance.warning(f"Invalid REQUEST_TIMEOUT value, using default: {config.DEFAULT_REQUEST_TIMEOUT}")
         return config.DEFAULT_REQUEST_TIMEOUT
 
-REQUEST_TIMEOUT = _get_validated_timeout()
 
 
 def configure_logging() -> logging.Logger:
@@ -86,6 +86,9 @@ def configure_logging() -> logging.Logger:
 
 # Configure logging
 logger = configure_logging()
+
+# Initialize REQUEST_TIMEOUT after logger is available
+REQUEST_TIMEOUT = _get_validated_timeout(logger)
 
 # Retrieve the RAWG API key from environment variables
 def _get_validated_api_key() -> Optional[str]:
@@ -189,7 +192,7 @@ def strip_html_tags(html_text: str) -> str:
         result = html.unescape(s.get_data()).strip()
         # Additional length check after processing
         return result[:config.MAX_DESCRIPTION_SIZE] if len(result) > config.MAX_DESCRIPTION_SIZE else result
-    except (html.parser.HTMLParseError, UnicodeDecodeError, UnicodeError) as e:
+    except (UnicodeDecodeError, UnicodeError) as e:
         logger.warning(f"HTML parsing failed: {e}")
         return html_text  # Return original text if parsing fails
     except Exception as e:
@@ -306,17 +309,20 @@ def _check_content_size(response: requests.Response) -> None:
     """
     # Primary guard: Check content-length header first to avoid reading large content
     content_length = response.headers.get('content-length')
+    content_length_valid = False
+
     if content_length:
         try:
             content_length_int = int(content_length)
             if content_length_int > config.MAX_RESPONSE_SIZE:
                 raise ValueError(f"Response too large: {content_length_int} bytes (max {config.MAX_RESPONSE_SIZE})")
+            content_length_valid = True
         except (ValueError, OverflowError) as e:
             logger.warning(f"Invalid content-length header: {e}")
     
-    # If no content-length header, we need to check actual content size
+    # If no valid content-length header, we need to check actual content size
     # but only read it once when necessary
-    if not content_length and not hasattr(response, '_content_checked'):
+    if not content_length_valid and not hasattr(response, '_content_checked'):
         content = response.content  # This will cache the content
         if len(content) > config.MAX_RESPONSE_SIZE:
             raise ValueError(f"Response content too large: {len(content)} bytes (max {config.MAX_RESPONSE_SIZE})")
@@ -484,8 +490,9 @@ def display_game_info(game_info: Dict[str, Any]) -> None:
     if game_info['description']:
         # Strip HTML tags for cleaner console output
         description = strip_html_tags(game_info['description'])
-        print("\nDescription:")
-        print(description[:config.MAX_DISPLAY_DESCRIPTION] + ("..." if len(description) > config.MAX_DISPLAY_DESCRIPTION else ""))
+        if description:  # Check if description is not empty after stripping
+            print("\nDescription:")
+            print(description[:config.MAX_DISPLAY_DESCRIPTION] + ("..." if len(description) > config.MAX_DISPLAY_DESCRIPTION else ""))
 
     if game_info['background_image']:
         print(f"\nBackground Image: {game_info['background_image']}")
@@ -545,7 +552,11 @@ def main() -> Optional[Dict[str, Any]]:
         check_api_key()
     except MissingAPIKeyError as e:
         logger.error(str(e))
-        logger.info("To set your API key, run: export RAWG_API_KEY='your-api-key-here'")
+        # Platform-specific instructions
+        if os.name == 'nt':  # Windows
+            logger.info("To set your API key, run: set RAWG_API_KEY=your-api-key-here")
+        else:  # Unix/Linux/Mac
+            logger.info("To set your API key, run: export RAWG_API_KEY='your-api-key-here'")
         return None
 
     game_name = args.game_name
