@@ -1,4 +1,4 @@
-# This project has moved to Codeberg: https://codeberg.org/notrtdsx/vgde
+# This project is on Codeberg too: https://codeberg.org/notrtdsx/vgde
 
 ## vgde (Video Game Data Explorer)
 
