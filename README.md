@@ -1,6 +1,6 @@
-# This project is on Codeberg too: https://codeberg.org/notrtdsx/vgde
+## This project has been moved to https://gitlab.com/notrtdsx/vgde
 
-## vgde (Video Game Data Explorer)
+# vgde (Video Game Data Explorer)
 
 **vgde** is a Python tool for quickly exploring and fetching information about video games using the [RAWG Video Games Database API](https://rawg.io/apidocs). Enter the name of a game, and vgde provides details such as the release date, rating, description, and more—all right from your terminal.
 
